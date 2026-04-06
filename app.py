@@ -134,10 +134,11 @@ def calculate_probability(row) -> tuple:
     if is_completed(str(row.get("フェーズ", ""))):
         return "確定", 1.0
 
-    kakudo_col = str(row.get("契約確度", "")).upper()
-    if "A" in kakudo_col: return "A", 0.8
-    if "B" in kakudo_col: return "B", 0.5
-    if "C" in kakudo_col: return "C", 0.2
+    kakudo_raw = row.get("契約確度", "")
+    kakudo_col = "" if pd.isna(kakudo_raw) else str(kakudo_raw).strip().upper()
+    if kakudo_col == "A": return "A", 0.8
+    if kakudo_col == "B": return "B", 0.5
+    if kakudo_col == "C": return "C", 0.2
 
     text = f"{row.get('フェーズ','')} {row.get('現状','')} {row.get('フォロー状況','')} {row.get('ご意向','')}"
     if any(k in text for k in ["稟議承認", "契約日", "開始日", "契約書", "最終段階", "理事長", "決裁"]): return "A", 0.8

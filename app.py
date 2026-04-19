@@ -3,6 +3,7 @@
 医療・福祉機関向け Streamlit アプリケーション
 """
 
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -92,6 +93,16 @@ with st.sidebar:
         excel_sheet_name = st.text_input("Excelシート名（空欄で先頭シート）", placeholder="Sheet1")
 
     st.markdown("---")
+
+    # データ再読み込みボタン — キャッシュをクリアして最新データを取得
+    if st.button("🔄 データを再読み込み"):
+        st.cache_data.clear()
+        # セッションに保存された古いデータハッシュをリセット
+        if "last_data_hash" in st.session_state:
+            del st.session_state["last_data_hash"]
+        st.rerun()
+
+    st.markdown("---")
     st.markdown("### 目標設定")
     target_count = st.number_input("目標件数（件）", min_value=1, value=50, step=1)
     target_amount = st.number_input("目標金額（円）", min_value=10000, value=1_000_000, step=10000, format="%d")
@@ -118,7 +129,10 @@ def load_from_google_sheets(url: str, sheet_name: str = "") -> pd.DataFrame:
     if sheet_name: export_url += f"&sheet={sheet_name}"
     # スプレッドシート側のキャッシュを回避して常に最新データを取得する
     export_url += f"&_={int(datetime.now().timestamp())}"
-    return pd.read_csv(export_url)
+    import io, requests
+    resp = requests.get(export_url)
+    resp.raise_for_status()
+    return pd.read_csv(io.StringIO(resp.text))
 
 def estimate_unit_price(row) -> int:
     name = str(row.get("取引先名", ""))
@@ -171,13 +185,22 @@ else:
         st.info("左側のメニューから進捗データファイルをアップロードしてください。")
         st.stop()
     try:
+        # ファイルポインタを先頭にリセット（再読み込み時に古いデータが残る問題を修正）
+        uploaded_file.seek(0)
+        # ファイルの内容をバイト列として読み込み、ハッシュで変更検知
+        raw_bytes = uploaded_file.read()
+        file_hash = hashlib.md5(raw_bytes).hexdigest()
+        # 前回と同じファイルかどうかを検知（デバッグ用にセッションに記録）
+        st.session_state["last_data_hash"] = file_hash
+        
+        import io
         if uploaded_file.name.endswith(".csv"): 
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(io.BytesIO(raw_bytes))
         else: 
             if "excel_sheet_name" in locals() and excel_sheet_name:
-                df = pd.read_excel(uploaded_file, engine="openpyxl", sheet_name=excel_sheet_name)
+                df = pd.read_excel(io.BytesIO(raw_bytes), engine="openpyxl", sheet_name=excel_sheet_name)
             else:
-                df = pd.read_excel(uploaded_file, engine="openpyxl")
+                df = pd.read_excel(io.BytesIO(raw_bytes), engine="openpyxl")
     except Exception as e:
         st.error(f"【エラー】ファイル読み込み失敗: {e}")
         st.stop()

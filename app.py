@@ -89,6 +89,7 @@ with st.sidebar:
         sheet_name = st.text_input("シート名（空欄で先頭シート）", placeholder="シート1")
     else:
         uploaded_file = st.file_uploader("進捗データファイル（CSV / Excel）", type=["csv", "xlsx"])
+        excel_sheet_name = st.text_input("Excelシート名（空欄で先頭シート）", placeholder="Sheet1")
 
     st.markdown("---")
     st.markdown("### 目標設定")
@@ -115,6 +116,8 @@ def load_from_google_sheets(url: str, sheet_name: str = "") -> pd.DataFrame:
         raise ValueError("URLを正しく認識できませんでした。")
     export_url = f"https://docs.google.com/spreadsheets/d/{sid}/gviz/tq?tqx=out:csv"
     if sheet_name: export_url += f"&sheet={sheet_name}"
+    # スプレッドシート側のキャッシュを回避して常に最新データを取得する
+    export_url += f"&_={int(datetime.now().timestamp())}"
     return pd.read_csv(export_url)
 
 def estimate_unit_price(row) -> int:
@@ -136,6 +139,7 @@ def calculate_probability(row) -> tuple:
 
     kakudo_raw = row.get("契約確度", "")
     kakudo_col = "" if pd.isna(kakudo_raw) else str(kakudo_raw).strip().upper()
+    kakudo_col = kakudo_col.translate(str.maketrans('ＡＢＣ', 'ABC'))
     if kakudo_col == "A": return "A", 0.8
     if kakudo_col == "B": return "B", 0.5
     if kakudo_col == "C": return "C", 0.2
@@ -167,8 +171,13 @@ else:
         st.info("左側のメニューから進捗データファイルをアップロードしてください。")
         st.stop()
     try:
-        if uploaded_file.name.endswith(".csv"): df = pd.read_csv(uploaded_file)
-        else: df = pd.read_excel(uploaded_file, engine="openpyxl")
+        if uploaded_file.name.endswith(".csv"): 
+            df = pd.read_csv(uploaded_file)
+        else: 
+            if "excel_sheet_name" in locals() and excel_sheet_name:
+                df = pd.read_excel(uploaded_file, engine="openpyxl", sheet_name=excel_sheet_name)
+            else:
+                df = pd.read_excel(uploaded_file, engine="openpyxl")
     except Exception as e:
         st.error(f"【エラー】ファイル読み込み失敗: {e}")
         st.stop()
